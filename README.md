@@ -62,7 +62,7 @@
 | Java | 17 | 运行环境 |
 | Spring Boot | 3.2.5 | 基础框架 |
 | LangChain4j | 0.36.0 | AI Services + Tool Use + ChatMemory |
-| 通义千问 (qwen-plus) | - | Agent推理 + Function Calling |
+| DeepSeek (deepseek-chat) | - | Agent推理 + Function Calling |
 | bge-small-zh (ONNX) | - | 本地向量化模型（中文优化）|
 | MyBatis-Plus | 3.5.5 | ORM |
 | Redis | - | 语义缓存 + 防重校验 |
@@ -133,8 +133,8 @@ spring.datasource.password: your_password_here
 # 修改Redis连接
 spring.data.redis.host: your-redis-host
 
-# 填入通义千问API Key
-langchain4j.dashscope.api-key: sk-your-real-api-key
+# 填入DeepSeek API Key（https://platform.deepseek.com/）
+langchain4j.deepseek.api-key: sk-your-deepseek-api-key
 ```
 
 ### 4. 编译运行

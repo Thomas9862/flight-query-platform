@@ -1,11 +1,11 @@
 package com.flight.query.config;
 
-import dev.langchain4j.community.model.dashscope.QwenChatModel;
-import dev.langchain4j.community.model.dashscope.QwenStreamingChatModel;
 import dev.langchain4j.model.chat.ChatLanguageModel;
 import dev.langchain4j.model.chat.StreamingChatLanguageModel;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.embedding.onnx.bgesmallzh.BgeSmallZhEmbeddingModel;
+import dev.langchain4j.model.openai.OpenAiChatModel;
+import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -15,32 +15,37 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class LangChain4jConfig {
 
-    @Value("${langchain4j.dashscope.api-key}")
+    @Value("${langchain4j.deepseek.api-key}")
     private String apiKey;
 
-    @Value("${langchain4j.dashscope.model-name:qwen-plus}")
+    @Value("${langchain4j.deepseek.base-url:https://api.deepseek.com}")
+    private String baseUrl;
+
+    @Value("${langchain4j.deepseek.model-name:deepseek-chat}")
     private String modelName;
 
     @Bean
     public ChatLanguageModel chatLanguageModel() {
-        log.info("[LangChain4jConfig] 初始化通义千问ChatModel, model={}", modelName);
+        log.info("[LangChain4jConfig] 初始化DeepSeek ChatModel, model={}", modelName);
 
-        return QwenChatModel.builder()
+        return OpenAiChatModel.builder()
                 .apiKey(apiKey)
+                .baseUrl(baseUrl)
                 .modelName(modelName)
-                .temperature(0.1f)
+                .temperature(0.1)
                 .maxTokens(2000)
                 .build();
     }
 
     @Bean
     public StreamingChatLanguageModel streamingChatLanguageModel() {
-        log.info("[LangChain4jConfig] 初始化通义千问StreamingChatModel, model={}", modelName);
+        log.info("[LangChain4jConfig] 初始化DeepSeek StreamingChatModel, model={}", modelName);
 
-        return QwenStreamingChatModel.builder()
+        return OpenAiStreamingChatModel.builder()
                 .apiKey(apiKey)
+                .baseUrl(baseUrl)
                 .modelName(modelName)
-                .temperature(0.1f)
+                .temperature(0.1)
                 .maxTokens(2000)
                 .build();
     }

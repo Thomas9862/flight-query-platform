@@ -48,14 +48,10 @@
             <artifactId>langchain4j-spring-boot-starter</artifactId>
         </dependency>
 
-        <!-- LangChain4j - 通义千问 -->
+        <!-- LangChain4j - DeepSeek (OpenAI兼容) -->
         <dependency>
             <groupId>dev.langchain4j</groupId>
-            <artifactId>langchain4j-community-dashscope</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>dev.langchain4j</groupId>
-            <artifactId>langchain4j-community-dashscope-spring-boot-starter</artifactId>
+            <artifactId>langchain4j-open-ai</artifactId>
         </dependency>
 
         <!-- LangChain4j - Embedding -->

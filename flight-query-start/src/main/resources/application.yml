@@ -49,12 +49,13 @@ mybatis-plus:
       logic-delete-value: 1
       logic-not-delete-value: 0
 
-# ── LangChain4j 通义千问 ─────────────────────────────────
-# 获取API Key: https://dashscope.console.aliyun.com/
+# ── LangChain4j DeepSeek ──────────────────────────────────
+# 获取API Key: https://platform.deepseek.com/
 langchain4j:
-  dashscope:
-    api-key: sk-your-dashscope-api-key-here
-    model-name: qwen-plus
+  deepseek:
+    api-key: sk-your-deepseek-api-key-here
+    base-url: https://api.deepseek.com
+    model-name: deepseek-chat
 
 # ── 日志 ──────────────────────────────────────────────────
 logging:
