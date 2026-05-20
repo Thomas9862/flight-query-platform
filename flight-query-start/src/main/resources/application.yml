@@ -1,0 +1,66 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /
+
+spring:
+  application:
+    name: flight-query-platform
+
+  # ── MySQL 数据源 ─────────────────────────────────────────
+  # 建议使用只读账号，作为SQL安全防护的最终兜底
+  datasource:
+    url: jdbc:mysql://localhost:3306/flight_db?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: flight_readonly
+    password: your_password_here
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      idle-timeout: 300000
+      max-lifetime: 600000
+      connection-timeout: 3000
+      connection-test-query: SELECT 1
+
+  # ── Redis (Spring Boot 3.x: spring.data.redis) ──────────
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password:
+      database: 0
+      timeout: 3000
+      lettuce:
+        pool:
+          max-active: 20
+          max-idle: 10
+          min-idle: 5
+          max-wait: 3000
+
+# ── MyBatis-Plus ──────────────────────────────────────────
+mybatis-plus:
+  mapper-locations: classpath*:mapper/**/*.xml
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+# ── LangChain4j 通义千问 ─────────────────────────────────
+# 获取API Key: https://dashscope.console.aliyun.com/
+langchain4j:
+  dashscope:
+    api-key: sk-your-dashscope-api-key-here
+    model-name: qwen-plus
+
+# ── 日志 ──────────────────────────────────────────────────
+logging:
+  level:
+    root: INFO
+    com.flight.query: DEBUG
+    dev.langchain4j: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
