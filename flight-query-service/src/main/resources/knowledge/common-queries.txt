@@ -1,0 +1,26 @@
+【利润分析常见维度】
+1. 按航司分析：GROUP BY outbound_marketing_airline，对比各航司的平均利润和订单量
+2. 按航线分析：GROUP BY route，找出高利润和低利润航线
+3. 按时间趋势：GROUP BY date_value 或 month_value，观察利润变化趋势
+4. 按品牌分析：GROUP BY brand，对比不同品牌的盈利能力
+5. 按市场分析：GROUP BY market，分析各市场的利润贡献
+6. 按渠道分析：GROUP BY meta，评估各流量渠道的ROI
+
+【常用聚合指标】
+- 总利润：SUM(order_estimated_profit_usd)
+- 平均客单利润：AVG(order_estimated_profit_usd)
+- 订单量：COUNT(DISTINCT user_order_id)
+- 平均客单价：AVG(user_order_price_ttl_usd)
+- 增值产品渗透率：可用 SUM(CASE WHEN total_ancillary_profit_usd > 0 THEN 1 ELSE 0 END) / COUNT(*) 计算
+
+【分析注意事项】
+1. 始终过滤虚拟订单：WHERE (virtual_order = 0 OR virtual_order IS NULL)
+2. 金额分析统一使用USD字段，避免多币种混淆
+3. 利润分析建议筛选已支付订单：user_order_status = 'PAID'
+4. 大数据量查询建议加 LIMIT 限制，避免返回过多数据
+5. 按日期范围筛选使用 date_value BETWEEN 'YYYY-MM-DD' AND 'YYYY-MM-DD'
+
+【异常数据排查思路】
+- 利润异常高/低：检查是否存在退款、加价异常、汇率问题
+- 订单量骤降：检查特定日期范围、品牌或市场筛选条件
+- 查询结果为空：放宽筛选条件，逐步排查是时间、航司还是市场条件导致

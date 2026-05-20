@@ -1,0 +1,35 @@
+【虚拟订单 virtual_order】
+virtual_order 字段用于标记测试订单和虚拟订单。virtual_order=0 或 NULL 表示真实订单，virtual_order=1 表示虚拟/测试订单。在统计真实业务数据时，必须过滤虚拟订单，条件为：virtual_order = 0 OR virtual_order IS NULL。
+
+【提前预订天数 lead_time】
+lead_time 是指用户下单日期到出发日期之间的天数差。例如用户1月1日下单，1月15日出发，则lead_time=14。该指标用于分析预订行为模式和定价策略效果。lead_time越大通常票价越低。
+
+【订单利润 order_estimated_profit_usd】
+order_estimated_profit_usd 是订单的预估总利润（USD），包含机票利润（flight_profit_usd）和增值产品总利润（total_ancillary_profit_usd）。这是衡量订单盈利能力的核心指标。
+
+【机票利润 flight_profit_usd】
+flight_profit_usd 是机票部分的利润（USD），等于用户支付的机票金额减去供应商成本和各项费用。是机票业务的核心利润指标。
+
+【增值产品总利润 total_ancillary_profit_usd】
+total_ancillary_profit_usd 是所有增值产品利润的汇总（USD），包括行李、选座、值机、保险等附加产品。增值产品是OTA利润的重要组成部分。
+
+【策略加价 total_policy_markup_usd】
+total_policy_markup_usd 是基于定价策略自动加价的总金额（USD）。加价策略可能基于航线热度、预订时间、市场竞争等因素动态调整。
+
+【Meta CPA佣金 meta_cpa_commission_usd】
+meta_cpa_commission_usd 是支付给流量渠道（如Google Flights, Skyscanner, Kayak等）的CPA推广佣金（USD）。需要在利润分析中扣除此成本。
+
+【PCC代码 flight_pcc_code】
+PCC（Pseudo City Code）是GDS系统中的代理人代码标识。不同PCC可能对应不同的供应商协议和采购价格。PCC分析有助于优化供应商成本。
+
+【舱位等级 cabin_class】
+cabin_class 用字母标识：Y=经济舱（Economy）, C=商务舱（Business）, F=头等舱（First）。不同舱位等级的利润率和客单价差异很大。
+
+【品牌 brand】
+brand 字段标识不同的产品品牌线，如 skytours、iwofly、airytrip。不同品牌面向不同的市场和客户群体，定价策略也不同。
+
+【市场 market】
+market 字段标识目标销售市场/国家。同一航线在不同市场的定价和利润可能有显著差异。
+
+【流量来源 meta】
+meta 字段记录用户的流量来源渠道，如 google（Google Flights）、skyscanner、kayak、direct（直接访问）等。用于分析各渠道的获客效率和ROI。
