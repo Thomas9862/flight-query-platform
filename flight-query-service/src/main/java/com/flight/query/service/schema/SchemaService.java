@@ -1,5 +1,8 @@
 package com.flight.query.service.schema;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.flight.query.domain.entity.SchemaFieldGroup;
+import com.flight.query.domain.mapper.SchemaFieldGroupMapper;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
@@ -13,79 +16,95 @@ import org.springframework.stereotype.Service;
 import jakarta.annotation.PostConstruct;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * Schema语义匹配服务
+ * Schema 语义匹配服务
  * <p>
- * 核心职责：
- * 1. 服务启动时将所有字段组的语义描述向量化，存入 InMemoryEmbeddingStore
- * 2. 用户问题进来时，向量化后计算余弦相似度，筛选最相关的字段组
- * 3. 将匹配到的字段组的详细说明拼接为Prompt注入内容
- * <p>
- * 向量化使用 LangChain4j 内置的 bge-small-zh（ONNX本地模型），
- * JVM进程内本地运行，无需部署外部服务，毫秒级响应。
+ * 从 MySQL schema_field_group 表加载字段组，向量化后存入 InMemoryEmbeddingStore。
+ * 字段组数据量小（8~30个），InMemory 足够；支持 reload() 热重载。
  */
 @Slf4j
 @Service
 public class SchemaService {
 
-    /** InMemoryEmbeddingStore - 内存向量存储 */
     private final InMemoryEmbeddingStore<TextSegment> embeddingStore;
-
-    /** bge-small-zh ONNX本地向量化模型 */
     private final EmbeddingModel embeddingModel;
+    private final SchemaFieldGroupMapper fieldGroupMapper;
 
-    /** 所有字段组定义 */
+    /** 内存中的字段组列表（从 MySQL 加载） */
     private List<FieldGroup> allGroups;
 
-    /** 相似度阈值，低于此值的字段组不注入（0~1，越高越严格） */
-    private static final double SIMILARITY_THRESHOLD = 0.5;
+    /** 语义描述 → 表名 的映射（用于 buildSchemaContext 动态获取表名） */
+    private Map<String, String> descToTableName;
 
-    /** 最大返回字段组数 */
+    private static final double SIMILARITY_THRESHOLD = 0.5;
     private static final int MAX_MATCH_COUNT = 3;
 
-    public SchemaService(EmbeddingModel embeddingModel) {
+    public SchemaService(EmbeddingModel embeddingModel, SchemaFieldGroupMapper fieldGroupMapper) {
         this.embeddingModel = embeddingModel;
+        this.fieldGroupMapper = fieldGroupMapper;
         this.embeddingStore = new InMemoryEmbeddingStore<>();
     }
 
     /**
-     * 服务启动时初始化：向量化所有字段组描述并存入Store
+     * 启动时从 MySQL 加载字段组并向量化
      */
     @PostConstruct
     public void init() {
-        this.allGroups = FieldGroupRegistry.buildAllGroups();
+        reload();
+    }
 
-        log.info("[SchemaService] 开始向量化字段组描述，共{}组", allGroups.size());
+    /**
+     * 重新加载：清空内存 → 从 MySQL 读取 → 向量化 → 存入 Store
+     * CRUD 操作后调用此方法热重载
+     */
+    public synchronized void reload() {
+        log.info("[SchemaService] 从 MySQL 加载字段组...");
         long start = System.currentTimeMillis();
 
+        // 1. 从 MySQL 加载所有启用的字段组
+        List<SchemaFieldGroup> entities = fieldGroupMapper.selectList(
+                new LambdaQueryWrapper<SchemaFieldGroup>()
+                        .eq(SchemaFieldGroup::getStatus, SchemaFieldGroup.STATUS_ENABLED)
+                        .orderByAsc(SchemaFieldGroup::getSortOrder));
+
+        // 2. 转为内存 POJO
+        this.allGroups = entities.stream()
+                .map(e -> new FieldGroup(e.getGroupName(), e.getSemanticDesc(), e.getFieldDetail()))
+                .collect(Collectors.toList());
+
+        // 3. 构建语义描述 → 表名的映射
+        this.descToTableName = entities.stream()
+                .collect(Collectors.toMap(
+                        SchemaFieldGroup::getSemanticDesc,
+                        SchemaFieldGroup::getTableName,
+                        (a, b) -> a));
+
+        // 4. 清空旧向量 → 重新向量化
+        embeddingStore.removeAll();
+
         for (FieldGroup group : allGroups) {
-            // 用语义描述做向量化（不是字段详情，那个太长且包含技术名词，语义匹配效果差）
             TextSegment segment = TextSegment.from(group.getSemanticDescription());
             Embedding embedding = embeddingModel.embed(segment).content();
             embeddingStore.add(embedding, segment);
         }
 
         long cost = System.currentTimeMillis() - start;
-        log.info("[SchemaService] 字段组向量化完成，耗时{}ms", cost);
+        log.info("[SchemaService] 字段组加载完成, 共{}组, 耗时{}ms", allGroups.size(), cost);
     }
 
     /**
      * 根据用户问题匹配最相关的字段组
-     *
-     * @param userQuestion 用户原始问题
-     * @return 匹配到的字段组列表（按相似度降序）
      */
     public List<FieldGroup> matchGroups(String userQuestion) {
         if (userQuestion == null || userQuestion.trim().isEmpty()) {
             return Collections.emptyList();
         }
 
-        // 1. 向量化用户问题
         Embedding questionEmbedding = embeddingModel.embed(userQuestion).content();
 
-        // 2. 在Store中检索最相关的字段组
         EmbeddingSearchRequest searchRequest = EmbeddingSearchRequest.builder()
                 .queryEmbedding(questionEmbedding)
                 .maxResults(MAX_MATCH_COUNT)
@@ -100,16 +119,12 @@ public class SchemaService {
             return Collections.emptyList();
         }
 
-        // 3. 根据匹配到的语义描述，找到对应的 FieldGroup
         List<FieldGroup> matchedGroups = matches.stream()
-                .map(match -> {
-                    String matchedDescription = match.embedded().text();
-                    return findGroupByDescription(matchedDescription);
-                })
+                .map(match -> findGroupByDescription(match.embedded().text()))
                 .filter(group -> group != null)
                 .collect(Collectors.toList());
 
-        log.info("[SchemaService] 用户问题匹配到{}个字段组: {}, question={}",
+        log.info("[SchemaService] 匹配到{}个字段组: {}, question={}",
                 matchedGroups.size(),
                 matchedGroups.stream().map(FieldGroup::getGroupName).collect(Collectors.joining(",")),
                 userQuestion);
@@ -118,10 +133,8 @@ public class SchemaService {
     }
 
     /**
-     * 将匹配到的字段组拼接成Prompt注入内容
-     *
-     * @param matchedGroups 匹配到的字段组
-     * @return Prompt中的Schema描述文本
+     * 将匹配到的字段组拼接成 Prompt 注入内容
+     * 表名从 MySQL 动态获取，不再硬编码
      */
     public String buildSchemaContext(List<FieldGroup> matchedGroups) {
         if (matchedGroups == null || matchedGroups.isEmpty()) {
@@ -129,7 +142,12 @@ public class SchemaService {
         }
 
         StringBuilder sb = new StringBuilder();
-        sb.append("表名：report_reservation_real_time（机票订单实时报表宽表）\n\n");
+
+        // 动态获取表名（取第一个匹配组的表名，多表场景可扩展）
+        String tableName = descToTableName.getOrDefault(
+                matchedGroups.get(0).getSemanticDescription(),
+                "report_reservation_real_time");
+        sb.append("表名：").append(tableName).append("（机票订单实时报表宽表）\n\n");
 
         for (FieldGroup group : matchedGroups) {
             sb.append(group.getFieldDetail()).append("\n\n");
@@ -139,7 +157,7 @@ public class SchemaService {
     }
 
     /**
-     * 获取匹配到的字段组名称（逗号分隔，用于记录日志）
+     * 获取匹配到的字段组名称（逗号分隔，用于日志）
      */
     public String getMatchedGroupNames(List<FieldGroup> matchedGroups) {
         if (matchedGroups == null || matchedGroups.isEmpty()) {
@@ -149,8 +167,6 @@ public class SchemaService {
                 .map(FieldGroup::getGroupName)
                 .collect(Collectors.joining(","));
     }
-
-    // ── private ──────────────────────────────────────────────
 
     private FieldGroup findGroupByDescription(String description) {
         for (FieldGroup group : allGroups) {

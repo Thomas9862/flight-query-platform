@@ -57,7 +57,7 @@ public class AgentQueryService {
         StringBuilder fullAnswer = new StringBuilder();
 
         agent.chatStream(sessionId, question)
-                .onPartialResponse(token -> {
+                .onNext(token -> {
                     fullAnswer.append(token);
                     sink.tryEmitNext(token);
                 })

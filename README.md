@@ -49,11 +49,11 @@
 
 | 工具 | 说明 | 技术实现 |
 |------|------|---------|
-| **SchemaLookupTool** | 根据问题语义匹配相关表字段 | bge-small-zh 向量化 + InMemoryEmbeddingStore 余弦相似度 |
+| **SchemaLookupTool** | 根据问题语义匹配相关表字段 | MySQL动态管理字段组 + bge-small-zh向量匹配，支持CRUD扩展 |
 | **SqlExecutionTool** | 执行SQL并返回结果，错误以文本返回让LLM自主修正 | JdbcTemplate + SqlSafetyChecker 三层安全防护 |
 | **DateTimeTool** | 返回当前日期和常用时间范围 | 解决LLM不知"今天"的问题 |
 | **AirlineKnowledgeTool** | IATA代码与航司名称双向映射 | 覆盖全球40+主要航司 |
-| **BusinessKnowledgeTool** | RAG业务知识库检索 | Embedding向量检索退改签规则、航司政策、业务指标定义 |
+| **BusinessKnowledgeTool** | RAG业务知识库检索 | MySQL存储 + Elasticsearch向量检索，支持CRUD管理 |
 
 ## 技术栈
 
@@ -65,8 +65,9 @@
 | DeepSeek (deepseek-chat) | - | Agent推理 + Function Calling |
 | bge-small-zh (ONNX) | - | 本地向量化模型（中文优化）|
 | MyBatis-Plus | 3.5.5 | ORM |
+| Elasticsearch | 8.x | RAG知识库向量存储与检索 |
 | Redis | - | 语义缓存 + 防重校验 |
-| MySQL | 8.0 | 数据存储 |
+| MySQL | 8.0 | 数据存储 + 知识库存储 |
 | WebFlux | - | SSE 流式响应 |
 
 ## 项目结构
@@ -85,15 +86,15 @@ flight-query-platform/
 │   │       ├── DateTimeTool
 │   │       ├── AirlineKnowledgeTool
 │   │       └── BusinessKnowledgeTool (RAG)
+│   ├── knowledge/              # 知识库管理（MySQL CRUD + ES向量同步）
 │   ├── schema/                 # Schema语义匹配（8个字段组、向量存储）
 │   └── sql/                    # SQL安全校验器
 ├── flight-query-api/           # 接口模块（Controller、DTO、异常处理）
+│   └── controller/
+│       ├── QueryController     # Agent查询接口（阻塞+SSE流式）
+│       └── KnowledgeController # 知识库CRUD管理接口
 ├── flight-query-start/         # 启动模块（配置、Bean注册）
-└── resources/knowledge/        # RAG知识库文档
-    ├── business-glossary.txt   # 业务指标定义
-    ├── fare-rules.txt          # 退改签规则
-    ├── airline-policies.txt    # 航司政策
-    └── common-queries.txt      # 常见分析方法
+└── resources/sql/init.sql      # 建表SQL + 知识库初始数据
 ```
 
 ## 快速启动
@@ -104,7 +105,8 @@ flight-query-platform/
 - Maven 3.8+
 - MySQL 8.0+
 - Redis
-- 通义千问 API Key（[获取地址](https://dashscope.console.aliyun.com/)）
+- Elasticsearch 8.x（知识库向量检索）
+- DeepSeek API Key（[获取地址](https://platform.deepseek.com/)）
 
 ### 2. 初始化数据库
 
@@ -132,6 +134,9 @@ spring.datasource.password: your_password_here
 
 # 修改Redis连接
 spring.data.redis.host: your-redis-host
+
+# 修改Elasticsearch连接
+elasticsearch.server-url: http://your-es-host:9200
 
 # 填入DeepSeek API Key（https://platform.deepseek.com/）
 langchain4j.deepseek.api-key: sk-your-deepseek-api-key
@@ -181,13 +186,15 @@ Agent思考: 构造SQL → 调用 SqlExecutionTool
 Agent思考: 得到数据，给出分析结论
 ```
 
-### 动态Schema注入
+### 动态Schema注入（MySQL管理）
 
-100+字段按业务维度分为8个组（时间、订单、航线、利润、增值产品、支付、乘客、供应商），通过 bge-small-zh 向量化后存入 InMemoryEmbeddingStore。Agent 调用 SchemaLookupTool 时自动匹配最相关的字段组，避免将全部字段注入 Prompt。
+100+字段按业务维度分为8个组（时间、订单、航线、利润、增值产品、支付、乘客、供应商），存储在 MySQL `schema_field_group` 表中，启动时加载并通过 bge-small-zh 向量化。Agent 调用 SchemaLookupTool 时自动匹配最相关的字段组注入 Prompt，避免全量字段塞入上下文。字段组支持 CRUD 管理，新增字段或新表无需改代码，`table_name` 列预留多表扩展能力。
 
-### RAG业务知识库
+### RAG业务知识库（MySQL + Elasticsearch）
 
-将机票行业知识（退改签规则、航司政策、业务指标定义等）按段落切分并向量化，Agent 通过 BusinessKnowledgeTool 检索相关知识片段辅助分析，体现领域专业性。
+知识源存储在 MySQL `knowledge_base` 表中（支持 CRUD 管理），启动时自动通过 bge-small-zh 向量化写入 Elasticsearch。Agent 通过 BusinessKnowledgeTool 在 ES 中做余弦相似度检索，获取最相关的知识片段辅助分析。
+
+知识分类：业务指标定义（BUSINESS_GLOSSARY）、退改签规则（FARE_RULES）、航司知识（AIRLINE_KNOWLEDGE）、查询分析指南（QUERY_GUIDE），共 26 条初始知识。
 
 ### SQL安全防护（三层）
 
@@ -235,3 +242,28 @@ data: [DONE]
 ```
 
 ### GET /api/query/health - 健康检查
+
+### 知识库管理接口
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | /api/knowledge | 查询所有启用的知识条目 |
+| GET | /api/knowledge/all | 查询所有知识条目（含禁用） |
+| GET | /api/knowledge/category/{category} | 按分类查询 |
+| GET | /api/knowledge/{id} | 根据ID查询 |
+| POST | /api/knowledge | 新增知识条目（自动同步ES） |
+| PUT | /api/knowledge/{id} | 更新知识条目（自动重建ES索引） |
+| DELETE | /api/knowledge/{id} | 删除知识条目（自动重建ES索引） |
+| POST | /api/knowledge/rebuild-index | 手动触发全量重建ES索引 |
+
+### Schema字段组管理接口
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | /api/schema | 查询所有启用的字段组 |
+| GET | /api/schema/all | 查询所有字段组（含禁用） |
+| GET | /api/schema/{id} | 根据ID查询 |
+| POST | /api/schema | 新增字段组（自动重载向量） |
+| PUT | /api/schema/{id} | 更新字段组（自动重载向量） |
+| DELETE | /api/schema/{id} | 删除字段组（自动重载向量） |
+| POST | /api/schema/reload | 手动触发字段组向量重载 |

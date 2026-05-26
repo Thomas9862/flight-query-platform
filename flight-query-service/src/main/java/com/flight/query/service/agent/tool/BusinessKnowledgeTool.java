@@ -8,62 +8,29 @@ import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.store.embedding.EmbeddingMatch;
 import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
 import dev.langchain4j.store.embedding.EmbeddingSearchResult;
-import dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore;
-import jakarta.annotation.PostConstruct;
+import dev.langchain4j.store.embedding.EmbeddingStore;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.io.Resource;
-import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.stereotype.Component;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
 
+/**
+ * RAG 业务知识库检索工具
+ * <p>
+ * 知识源：MySQL（knowledge_base 表）→ 向量化 → Elasticsearch
+ * 检索：bge-small-zh 向量化查询 → ES 余弦相似度匹配 → 返回 top-3 知识片段
+ * <p>
+ * 知识同步由 {@link com.flight.query.service.knowledge.KnowledgeService} 负责，
+ * 本工具只做检索，保持职责单一。
+ */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class BusinessKnowledgeTool {
 
     private final EmbeddingModel embeddingModel;
-    private final InMemoryEmbeddingStore<TextSegment> knowledgeStore;
-
-    public BusinessKnowledgeTool(EmbeddingModel embeddingModel) {
-        this.embeddingModel = embeddingModel;
-        this.knowledgeStore = new InMemoryEmbeddingStore<>();
-    }
-
-    @PostConstruct
-    public void init() {
-        log.info("[BusinessKnowledgeTool] 开始加载业务知识库...");
-        long start = System.currentTimeMillis();
-
-        try {
-            PathMatchingResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
-            Resource[] resources = resolver.getResources("classpath:knowledge/*.txt");
-
-            int totalChunks = 0;
-            for (Resource resource : resources) {
-                List<String> chunks = loadAndSplit(resource);
-                for (String chunk : chunks) {
-                    TextSegment segment = TextSegment.from(chunk);
-                    Embedding embedding = embeddingModel.embed(segment).content();
-                    knowledgeStore.add(embedding, segment);
-                    totalChunks++;
-                }
-                log.info("[BusinessKnowledgeTool] 已加载: {}, 分段数: {}",
-                        resource.getFilename(), chunks.size());
-            }
-
-            long cost = System.currentTimeMillis() - start;
-            log.info("[BusinessKnowledgeTool] 知识库加载完成, 共{}个知识片段, 耗时{}ms",
-                    totalChunks, cost);
-
-        } catch (Exception e) {
-            log.error("[BusinessKnowledgeTool] 知识库加载失败", e);
-        }
-    }
+    private final EmbeddingStore<TextSegment> embeddingStore;
 
     @Tool("查询机票行业业务知识库。包含退改签规则、航司政策、业务指标定义、常见分析方法等专业知识。当用户询问业务概念或需要领域知识辅助分析时使用此工具。")
     public String queryKnowledge(
@@ -79,7 +46,7 @@ public class BusinessKnowledgeTool {
                 .minScore(0.5)
                 .build();
 
-        EmbeddingSearchResult<TextSegment> result = knowledgeStore.search(request);
+        EmbeddingSearchResult<TextSegment> result = embeddingStore.search(request);
         List<EmbeddingMatch<TextSegment>> matches = result.matches();
 
         if (matches.isEmpty()) {
@@ -88,32 +55,15 @@ public class BusinessKnowledgeTool {
 
         StringBuilder sb = new StringBuilder("相关业务知识：\n\n");
         for (int i = 0; i < matches.size(); i++) {
-            sb.append(matches.get(i).embedded().text());
+            EmbeddingMatch<TextSegment> match = matches.get(i);
+            sb.append(match.embedded().text());
+            sb.append(String.format(" (相似度: %.2f)", match.score()));
             if (i < matches.size() - 1) {
                 sb.append("\n\n");
             }
         }
 
+        log.info("[BusinessKnowledgeTool] 检索到{}条相关知识", matches.size());
         return sb.toString();
-    }
-
-    private List<String> loadAndSplit(Resource resource) {
-        List<String> chunks = new ArrayList<>();
-        try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(resource.getInputStream(), StandardCharsets.UTF_8))) {
-
-            String content = reader.lines().collect(Collectors.joining("\n"));
-            String[] sections = content.split("(?=【)");
-
-            for (String section : sections) {
-                String trimmed = section.trim();
-                if (!trimmed.isEmpty()) {
-                    chunks.add(trimmed);
-                }
-            }
-        } catch (Exception e) {
-            log.error("[BusinessKnowledgeTool] 文件读取失败: {}", resource.getFilename(), e);
-        }
-        return chunks;
     }
 }

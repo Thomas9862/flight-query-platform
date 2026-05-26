@@ -64,6 +64,12 @@
             <artifactId>langchain4j-embeddings-bge-small-zh</artifactId>
         </dependency>
 
+        <!-- LangChain4j - Elasticsearch 向量存储 -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-elasticsearch</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>

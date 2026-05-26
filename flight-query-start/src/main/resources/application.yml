@@ -57,6 +57,11 @@ langchain4j:
     base-url: https://api.deepseek.com
     model-name: deepseek-chat
 
+# ── Elasticsearch（RAG 知识库向量存储）────────────────────
+elasticsearch:
+  server-url: http://localhost:9200
+  index-name: flight_knowledge
+
 # ── 日志 ──────────────────────────────────────────────────
 logging:
   level:

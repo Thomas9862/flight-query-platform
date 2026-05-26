@@ -115,18 +115,19 @@
                 <version>${hutool.version}</version>
             </dependency>
 
+            <!-- LangChain4j - Elasticsearch 向量存储 -->
+            <dependency>
+                <groupId>dev.langchain4j</groupId>
+                <artifactId>langchain4j-elasticsearch</artifactId>
+                <version>${langchain4j.version}</version>
+            </dependency>
+
             <!-- Lombok -->
             <dependency>
                 <groupId>org.projectlombok</groupId>
                 <artifactId>lombok</artifactId>
                 <version>${lombok.version}</version>
                 <scope>provided</scope>
-            </dependency>
-
-            <!-- SLF4J (version managed by Spring Boot BOM) -->
-            <dependency>
-                <groupId>org.slf4j</groupId>
-                <artifactId>slf4j-api</artifactId>
             </dependency>
 
         </dependencies>
